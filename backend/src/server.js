@@ -1,4 +1,5 @@
 import express from 'express';
+import { getVersionInfo } from './version.js';
 import cors from 'cors';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -21,6 +22,7 @@ app.get('/', (_req, res) => {
 
 // Health
 app.get('/health', (_req, res) => {
+app.get('/api/v1/version', (_req, res) => res.json(getVersionInfo()));
   res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
 });
 
