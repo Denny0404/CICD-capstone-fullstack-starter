@@ -1,20 +1,9 @@
 {
-  "name": "CICD Capstone",
-  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
-  "features": {
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
-  },
-  "postCreateCommand": "corepack enable && npm -v && node -v",
+  "name": "capstone",
+  "postCreateCommand": "bash scripts/aws-bootstrap-codespaces.sh",
   "customizations": {
     "vscode": {
-      "extensions": [
-        "dbaeumer.vscode-eslint",
-        "esbenp.prettier-vscode",
-        "ms-azuretools.vscode-docker",
-        "GitHub.vscode-github-actions"
-      ]
+      "extensions": ["hashicorp.terraform", "amazonwebservices.aws-toolkit-vscode"]
     }
-  },
-  "forwardPorts": [5173, 3000]
+  }
 }
