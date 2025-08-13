@@ -3,12 +3,15 @@ node_modules/
 dist/
 build/
 
-# Terraform
+# Local env (do NOT commit secrets)
+backend/.env
+
+# Terraform (generated)
 infra/terraform/.terraform/
 infra/terraform/*.tfstate
 infra/terraform/*.tfstate.*
 infra/terraform/tfplan
 
-# Do NOT commit installers/binaries
+# Installers / large binaries
 infra/terraform/awscliv2.zip
 infra/terraform/aws/
