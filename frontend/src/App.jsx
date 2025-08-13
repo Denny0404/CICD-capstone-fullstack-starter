@@ -19,20 +19,20 @@ export default function App() {
 
   async function addItem(e) {
     e.preventDefault();
-    if (!name.trim()) return;
+    const n = name.trim(); if (!n) return;
+    setLoading(true); setErr("");
     try {
       const it = await api(`${API}/items`, {
-        method: "POST",
-        body: JSON.stringify({ name: name.trim() }),
+        method: "POST", body: JSON.stringify({ name: n })
       });
-      setItems([it, ...items]);
-      setName("");
+      setItems([it, ...items]); setName("");
     } catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
   }
 
   async function toggle(id) {
     try {
-      const it = await api(`${API}/items/${id}/toggle`, { method: "PATCH" });
+      const it = await api(`${API}/items/${id}/toggle`, { method: "POST" });
       setItems(items.map(x => x.id === id ? it : x));
     } catch (e) { setErr(e.message); }
   }
@@ -47,32 +47,26 @@ export default function App() {
   useEffect(() => { load(); }, []);
 
   return (
-    <div style={{maxWidth: 640, margin: "40px auto", padding: 16}}>
+    <main className="p-6 max-w-xl mx-auto">
       <h1>Capstone Items</h1>
+      {err && <p style={{color:'crimson'}}>Error: {err}</p>}
 
-      <form onSubmit={addItem} style={{display:"flex", gap:8, marginBottom:16}}>
-        <input
-          value={name}
-          onChange={e=>setName(e.target.value)}
-          placeholder="Add a new item..."
-          style={{flex:1, padding:8}}
-        />
-        <button type="submit">Add</button>
+      <form onSubmit={addItem} style={{marginBottom:12}}>
+        <input value={name} onChange={e=>setName(e.target.value)} placeholder="New item…" />
+        <button disabled={loading}>Add</button>
       </form>
 
-      {err && <p style={{color:"crimson"}}>{err}</p>}
-      {loading ? <p>Loading…</p> : null}
-
-      <ul style={{listStyle:"none", padding:0, display:"grid", gap:8}}>
+      {loading && <p>Loading…</p>}
+      <ul>
         {items.map(it => (
-          <li key={it.id} style={{display:"flex", alignItems:"center", gap:12, border:"1px solid #eee", padding:8, borderRadius:8}}>
+          <li key={it.id} style={{display:'flex', gap:8, alignItems:'center'}}>
             <input type="checkbox" checked={!!it.done} onChange={()=>toggle(it.id)} />
-            <div style={{flex:1, textDecoration: it.done ? "line-through" : "none"}}>{it.name}</div>
-            <small>{new Date(it.created_at).toLocaleString()}</small>
-            <button onClick={()=>remove(it.id)} style={{marginLeft:8}}>Delete</button>
+            <span style={{textDecoration: it.done ? 'line-through' : 'none'}}>{it.name}</span>
+            <small style={{opacity:.6}}>{new Date(it.created_at).toLocaleString()}</small>
+            <button onClick={()=>remove(it.id)} style={{marginLeft:'auto'}}>Delete</button>
           </li>
         ))}
       </ul>
-    </div>
+    </main>
   );
 }
