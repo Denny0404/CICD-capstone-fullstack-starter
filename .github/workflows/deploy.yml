@@ -1,0 +1,53 @@
+name: Deploy
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install (root workspace)
+        run: npm ci --workspaces --include-workspace-root --no-audit --no-fund
+
+      - name: Build frontend
+        run: npm --workspace frontend run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform apply (infra/terraform)
+        working-directory: infra/terraform
+        env:
+          TF_VAR_db_password: ${{ secrets.TF_VAR_db_password }}
+        run: |
+          terraform init -input=false
+          terraform plan -out=tfplan -input=false
+          terraform apply -auto-approve tfplan
+
+      # OPTIONAL: If your Terraform creates an S3 bucket for the frontend (FRONTEND_BUCKET),
+      # this will publish the built site. Keep only after that bucket exists.
+      - name: Upload frontend to S3
+        if: ${{ secrets.FRONTEND_BUCKET != '' }}
+        run: aws s3 sync frontend/dist s3://${{ secrets.FRONTEND_BUCKET }} --delete
