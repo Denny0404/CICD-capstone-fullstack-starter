@@ -1,0 +1,124 @@
+name: CD main → AWS
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install workspaces & build frontend
+        run: |
+          npm ci
+          npm --workspace frontend run build
+
+      - name: Download (or keep) frontend build as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      # —— AWS login ——
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      # —— Terraform: validate + plan + apply ——
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init/validate/plan
+        working-directory: infra/terraform
+        run: |
+          terraform init -input=false
+          terraform fmt -check
+          terraform validate
+          terraform plan -input=false -out tfplan
+
+      - name: Terraform apply (auto-approve)
+        working-directory: infra/terraform
+        run: terraform apply -input=false -auto-approve tfplan
+
+      # (Optional) read TF output for bucket
+      - name: Read bucket from TF output (if defined)
+        id: tfout
+        working-directory: infra/terraform
+        run: |
+          set -e
+          if terraform output -raw website_bucket_name >/dev/null 2>&1; then
+            echo "bucket=$(terraform output -raw website_bucket_name)" >> $GITHUB_OUTPUT
+          fi
+
+      # —— Frontend deploy to S3 ——
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - name: Sync frontend to S3
+        run: |
+          BUCKET="${{ steps.tfout.outputs.bucket || secrets.FRONTEND_BUCKET }}"
+          if [ -z "$BUCKET" ]; then
+            echo "No S3 bucket provided. Set TF output 'website_bucket_name' or secret FRONTEND_BUCKET."
+            exit 1
+          fi
+          aws s3 sync frontend-dist/ "s3://$BUCKET" --delete
+
+      # —— Backend deploy to EC2 over SSH (PM2) ——
+      - name: Package backend
+        run: |
+          tar -czf backend.tgz -C backend .
+      - name: Upload backend via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          source: "backend.tgz"
+          target: "~/app"
+
+      - name: Remote install & restart with PM2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            set -e
+            mkdir -p ~/app
+            cd ~/app
+            tar -xzf backend.tgz -C ~/app
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - || true
+            sudo apt-get install -y nodejs || true
+            sudo npm i -g pm2 || true
+            cd backend
+            npm ci
+            # Ensure env file exists (adjust as needed or use SSM)
+            cat > .env <<ENV
+PGHOST=${PGHOST:-127.0.0.1}
+PGPORT=${PGPORT:-5432}
+PGUSER=${PGUSER:-appuser}
+PGPASSWORD=${PGPASSWORD:-apppass}
+PGDATABASE=${PGDATABASE:-appdb}
+PORT=${PORT:-${{ secrets.BACKEND_PORT }}}
+ENV
+            pm2 start server.js --name capstone-api --update-env || pm2 restart capstone-api --update-env
+            pm2 save

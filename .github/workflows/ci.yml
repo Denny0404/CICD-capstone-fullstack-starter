@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ "develop", "feature/**", "feat/**", "fix/**" ]
   pull_request:
-    branches: [ "develop", "main" ]
 
 jobs:
   build-and-lint:
@@ -12,16 +10,15 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15
+        image: postgres:16
         env:
           POSTGRES_USER: appuser
           POSTGRES_PASSWORD: apppass
           POSTGRES_DB: appdb
-        ports:
-          - 5432:5432
+        ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U appuser -d appdb"
-          --health-interval 10s --health-timeout 5s --health-retries 5
+          --health-cmd="pg_isready -U appuser -d appdb"
+          --health-interval=10s --health-timeout=5s --health-retries=5
 
     steps:
       - uses: actions/checkout@v4
@@ -29,10 +26,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: npm
 
       - name: Install (root workspace)
-        run: npm ci --workspaces --include-workspace-root --no-audit --no-fund
+        run: npm ci
 
       - name: Lint (root)
         run: npm run lint
@@ -40,21 +37,19 @@ jobs:
       - name: Build frontend
         run: npm --workspace frontend run build
 
-      - name: Wait for Postgres
-        run: |
-          for i in {1..30}; do
-            if pg_isready -h 127.0.0.1 -p 5432 -U appuser -d appdb; then exit 0; fi
-            sleep 2
-          done
-          exit 1
+      - name: Save frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
 
       - name: Run backend tests (with coverage)
         env:
-          DB_HOST: 127.0.0.1
-          DB_PORT: 5432
-          DB_USER: appuser
-          DB_PASSWORD: apppass
-          DB_NAME: appdb
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: appuser
+          PGPASSWORD: apppass
+          PGDATABASE: appdb
         run: npm --workspace @capstone/backend run test
 
       - name: Upload backend coverage
@@ -62,13 +57,3 @@ jobs:
         with:
           name: backend-coverage
           path: backend/coverage
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform fmt/validate
-        working-directory: infra/terraform
-        run: |
-          terraform fmt -check
-          terraform init -input=false
-          terraform validate
