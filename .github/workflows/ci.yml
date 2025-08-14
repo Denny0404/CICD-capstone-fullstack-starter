@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ "**" ]
+    branches: [ "develop", "feature/**", "feat/**", "fix/**" ]
   pull_request:
+    branches: [ "develop", "main" ]
 
 jobs:
   build-and-lint:
@@ -11,29 +12,27 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: postgres:15
         env:
-          POSTGRES_DB: appdb
           POSTGRES_USER: appuser
           POSTGRES_PASSWORD: apppass
+          POSTGRES_DB: appdb
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U appuser -d appdb"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
+          --health-cmd "pg_isready -U appuser -d appdb"
+          --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
       - name: Install (root workspace)
-        run: npm ci
+        run: npm ci --workspaces --include-workspace-root --no-audit --no-fund
 
       - name: Lint (root)
         run: npm run lint
@@ -42,16 +41,12 @@ jobs:
         run: npm --workspace frontend run build
 
       - name: Wait for Postgres
-        env:
-          PGPASSWORD: apppass
         run: |
           for i in {1..30}; do
-            if pg_isready -h 127.0.0.1 -p 5432 -U appuser -d appdb; then
-              exit 0
-            fi
-            echo "waiting for postgres... ($i)"; sleep 2
+            if pg_isready -h 127.0.0.1 -p 5432 -U appuser -d appdb; then exit 0; fi
+            sleep 2
           done
-          echo "postgres never became healthy" >&2; exit 1
+          exit 1
 
       - name: Run backend tests (with coverage)
         env:
@@ -63,8 +58,17 @@ jobs:
         run: npm --workspace @capstone/backend run test
 
       - name: Upload backend coverage
-        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-backend
+          name: backend-coverage
           path: backend/coverage
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform fmt/validate
+        working-directory: infra/terraform
+        run: |
+          terraform fmt -check
+          terraform init -input=false
+          terraform validate
