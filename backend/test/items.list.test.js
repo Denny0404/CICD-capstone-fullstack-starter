@@ -1,3 +1,4 @@
+/* global test, expect, describe, beforeAll, afterAll */
 import request from 'supertest';
 import { vi } from 'vitest';
 vi.mock('../src/items.repo.js', () => ({

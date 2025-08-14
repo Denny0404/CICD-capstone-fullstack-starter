@@ -4,24 +4,33 @@ on:
   push:
     branches: [ "**" ]
   pull_request:
-    branches: [ "**" ]
-
-permissions:
-  contents: read
 
 jobs:
   build-and-lint:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: appdb
+          POSTGRES_USER: appuser
+          POSTGRES_PASSWORD: apppass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U appuser -d appdb"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
       - name: Install (root workspace)
         run: npm ci
@@ -30,6 +39,32 @@ jobs:
         run: npm run lint
 
       - name: Build frontend
+        run: npm --workspace frontend run build
+
+      - name: Wait for Postgres
+        env:
+          PGPASSWORD: apppass
         run: |
-          cd frontend
-          npm run build
+          for i in {1..30}; do
+            if pg_isready -h 127.0.0.1 -p 5432 -U appuser -d appdb; then
+              exit 0
+            fi
+            echo "waiting for postgres... ($i)"; sleep 2
+          done
+          echo "postgres never became healthy" >&2; exit 1
+
+      - name: Run backend tests (with coverage)
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USER: appuser
+          DB_PASSWORD: apppass
+          DB_NAME: appdb
+        run: npm --workspace @capstone/backend run test
+
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend
+          path: backend/coverage

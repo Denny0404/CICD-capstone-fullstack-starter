@@ -1,3 +1,4 @@
+/* global test, expect, describe, beforeAll, afterAll */
 import request from 'supertest';
 import app from '../src/app.js';
 

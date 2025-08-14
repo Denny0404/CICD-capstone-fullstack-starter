@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['test/**/*.test.js'],
-    coverage: { reporter: ['text', 'lcov'], reportsDirectory: './coverage' }
+    globals: true,
+    coverage: { reporter: ['text', 'lcov'] }
   }
 });
